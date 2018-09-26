@@ -72,7 +72,13 @@ horizontal_coordinates_spherical = OrderedDict(
                 units="degrees_east", coordinate="YG XG")),
     YG = dict(dims=["j_g", "i_g"], attrs=dict(
                 standard_name="latitude_at_f_location", long_name="latitude",
-                units="degrees_north", coordinates="YG XG"))
+                units="degrees_north", coordinates="YG XG")),
+    CS  = dict(dims=["j", "i"], attrs=dict(standard_name="Cos of grid orientation angle",
+               long_name="AngleCS", units=" ", coordinate="YC XC"),
+               filename='AngleCS'),
+    SN  = dict(dims=["j", "i"], attrs=dict(standard_name="Sin of grid orientation angle",
+               long_name="AngleSN", units=" ", coordinate="YC XC"),
+               filename='AngleSN')
 )
 
 horizontal_coordinates_curvcart = OrderedDict(

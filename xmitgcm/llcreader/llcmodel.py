@@ -339,7 +339,8 @@ def _chunks(l, n):
         yield l[i:i + n]
 
 
-def _get_facet_chunk(store, varname, iternum, nfacet, klevels, nx, nz, dtype):
+def _get_facet_chunk(store, varname, iternum, nfacet, klevels, nx, nz, dtype,
+                     point):
     fs, path = store.get_fs_and_full_path(varname, iternum)
 
     assert (nfacet >= 0) & (nfacet < _nfacets)
@@ -352,7 +353,8 @@ def _get_facet_chunk(store, varname, iternum, nfacet, klevels, nx, nz, dtype):
     level_data = []
 
     # the store tells us whether we need a mask or not
-    point = _get_variable_point(varname)
+    if point is None:
+        point = _get_variable_point(varname)
     if store.shrunk:
         index = all_index_data[nx][point]
         zgroup = store.open_mask_group()
@@ -515,7 +517,7 @@ class BaseLLCModel:
         return mask, index
 
 
-    def _dask_array(self, nfacet, varname, iters, klevels, k_chunksize):
+    def _dask_array(self, nfacet, varname, iters, klevels, k_chunksize, point):
         # return a dask array for a single facet
         facet_shape =  _facet_shape(nfacet, self.nx)
         time_chunks = (len(iters) * (1,),)
@@ -531,21 +533,24 @@ class BaseLLCModel:
             for n_k, these_klevels in enumerate(_chunks(klevels, k_chunksize)):
                 key = name, n_iter, n_k, 0, 0, 0
                 task = (_get_facet_chunk, self.store, varname, iternum,
-                         nfacet, these_klevels, self.nx, self.nz, self.dtype)
+                         nfacet, these_klevels, self.nx, self.nz, self.dtype,
+                         point)
                 dsk[key] = task
 
         return dsa.Array(dsk, name, chunks, self.dtype)
 
 
-    def _get_facet_data(self, varname, iters, klevels, k_chunksize):
-        mask, index = self._get_mask_and_index_for_variable(varname)
+    def _get_facet_data(self, varname, iters, klevels, k_chunksize, point):
+        # AP: line below is not used
+        #mask, index = self._get_mask_and_index_for_variable(varname)
         # needs facets to be outer index of nested lists
         dims = _VAR_METADATA[varname]['dims']
 
         if len(dims)==2:
             klevels = [0,]
 
-        data_facets = [self._dask_array(nfacet, varname, iters, klevels, k_chunksize)
+        data_facets = [self._dask_array(nfacet, varname, iters, klevels, 
+                                        k_chunksize, point)
                        for nfacet in range(5)]
 
         if len(dims)==2:
@@ -557,7 +562,7 @@ class BaseLLCModel:
 
     def get_dataset(self, varnames=None, iter_start=None, iter_stop=None,
                     iter_step=None, k_levels=None, k_chunksize=1,
-                    type='faces'):
+                    type='faces', points=None):
         """
         Create an xarray Dataset object for this model.
 
@@ -580,6 +585,8 @@ class BaseLLCModel:
             How many vertical levels per Dask chunk.
         type : {'faces', 'latlon'}, optional
             What type of dataset to create
+        points : list of strings, optional
+            Overide defautl mask points (llc4320, oceTAUX/oceTAUY) 
 
         Returns
         -------
@@ -604,6 +611,8 @@ class BaseLLCModel:
         iters = np.arange(*iter_params)
 
         varnames = varnames or self.varnames
+        if points is None:
+            points = [None for v in varnames]
 
         ds = self._make_coords_faces(iters)
         if type=='latlon':
@@ -614,8 +623,9 @@ class BaseLLCModel:
 
         # get the data in facet form
         data_facets = {vname:
-                       self._get_facet_data(vname, iters, k_levels, k_chunksize)
-                       for vname in varnames}
+                       self._get_facet_data(vname, iters, k_levels, k_chunksize,
+                                            point)
+                       for vname, point in zip(varnames,points)}
 
         # transform it into faces or latlon
         data_transformers = {'faces': _all_facets_to_faces,
